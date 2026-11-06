@@ -50,7 +50,8 @@ func (s *Service) GetObjectDetails(ctx context.Context, input dto.GetObjectDetai
 	var oid uint32
 
 	err := s.pool.
-		QueryRow(ctx,
+		QueryRow(
+			ctx,
 			`SELECT 
 				c.oid
 			FROM 
@@ -112,8 +113,9 @@ func (s *Service) GetObjectDetails(ctx context.Context, input dto.GetObjectDetai
 func (s *Service) loadColumns(ctx context.Context, oid uint32, result *dto.GetObjectDetailsOutput) error {
 
 	rows, err := s.pool.
-		Query(ctx, `
-			SELECT
+		Query(
+			ctx,
+			`SELECT
 				a.attname,
 				pg_catalog.format_type(a.atttypid, a.atttypmod),
 				NOT a.attnotnull,
@@ -168,24 +170,27 @@ func (s *Service) loadColumns(ctx context.Context, oid uint32, result *dto.GetOb
 
 func (s *Service) loadConstraints(ctx context.Context, oid uint32, result *dto.GetObjectDetailsOutput) error {
 
-	rows, err := s.pool.Query(ctx, `
-		SELECT
-			conname,
-			CASE contype
-				WHEN 'p' THEN 'PRIMARY KEY'
-				WHEN 'f' THEN 'FOREIGN KEY'
-				WHEN 'u' THEN 'UNIQUE'
-				WHEN 'c' THEN 'CHECK'
-				WHEN 'x' THEN 'EXCLUDE'
-				ELSE contype::text
-			END,
-			pg_catalog.pg_get_constraintdef(oid, true)
-		FROM 
-			pg_catalog.pg_constraint
-		WHERE 
-			conrelid = $1::oid
-		ORDER BY 
-			conname`, oid)
+	rows, err := s.pool.
+		Query(
+			ctx,
+			`SELECT
+				conname,
+				CASE contype
+					WHEN 'p' THEN 'PRIMARY KEY'
+					WHEN 'f' THEN 'FOREIGN KEY'
+					WHEN 'u' THEN 'UNIQUE'
+					WHEN 'c' THEN 'CHECK'
+					WHEN 'x' THEN 'EXCLUDE'
+					ELSE contype::text
+				END,
+				pg_catalog.pg_get_constraintdef(oid, true)
+			FROM 
+				pg_catalog.pg_constraint
+			WHERE 
+				conrelid = $1::oid
+			ORDER BY 
+				conname`, oid,
+		)
 	{
 		if err != nil {
 			return fmt.Errorf("get constraints: %w", err)
@@ -212,27 +217,33 @@ func (s *Service) loadConstraints(ctx context.Context, oid uint32, result *dto.G
 	return rows.Err()
 }
 
-func (s *Service) loadIndexes(
-	ctx context.Context,
-	oid uint32,
-	result *dto.GetObjectDetailsOutput,
-) error {
-	rows, err := s.pool.Query(ctx, `
-		SELECT
-			i.relname,
-			pg_catalog.pg_get_indexdef(i.oid)
-		FROM pg_catalog.pg_index x
-		JOIN pg_catalog.pg_class i
-			ON i.oid = x.indexrelid
-		WHERE x.indrelid = $1::oid
-		ORDER BY i.relname
-	`, oid)
+func (s *Service) loadIndexes(ctx context.Context, oid uint32, result *dto.GetObjectDetailsOutput) error {
+
+	rows, err := s.pool.
+		Query(
+			ctx,
+			`SELECT
+				i.relname,
+				pg_catalog.pg_get_indexdef(i.oid)
+			FROM 	
+				pg_catalog.pg_index AS x
+			JOIN 
+				pg_catalog.pg_class AS i ON i.oid = x.indexrelid
+			WHERE 
+				x.indrelid = $1::oid
+			ORDER BY 
+				i.relname`,
+			oid,
+		)
+
 	if err != nil {
 		return fmt.Errorf("get indexes: %w", err)
 	}
+
 	defer rows.Close()
 
 	for rows.Next() {
+
 		var index dto.Index
 
 		if err := rows.Scan(
@@ -248,35 +259,37 @@ func (s *Service) loadIndexes(
 	return rows.Err()
 }
 
-func (s *Service) sequenceDetails(
-	ctx context.Context,
-	oid uint32,
-	result *dto.GetObjectDetailsOutput,
-) error {
+func (s *Service) sequenceDetails(ctx context.Context, oid uint32, result *dto.GetObjectDetailsOutput) error {
+
 	var dataType string
 	var start, increment, minimum, maximum, cache int64
 	var cycle bool
 
-	err := s.pool.QueryRow(ctx, `
-		SELECT
-			pg_catalog.format_type(seqtypid, NULL),
-			seqstart,
-			seqincrement,
-			seqmin,
-			seqmax,
-			seqcache,
-			seqcycle
-		FROM pg_catalog.pg_sequence
-		WHERE seqrelid = $1::oid
-	`, oid).Scan(
-		&dataType,
-		&start,
-		&increment,
-		&minimum,
-		&maximum,
-		&cache,
-		&cycle,
-	)
+	err := s.pool.
+		QueryRow(
+			ctx,
+			`SELECT
+				pg_catalog.format_type(seqtypid, NULL),
+				seqstart,
+				seqincrement,
+				seqmin,
+				seqmax,
+				seqcache,
+				seqcycle
+			FROM 
+				pg_catalog.pg_sequence
+			WHERE 
+				seqrelid = $1::oid`, oid).
+		Scan(
+			&dataType,
+			&start,
+			&increment,
+			&minimum,
+			&maximum,
+			&cache,
+			&cycle,
+		)
+
 	if err != nil {
 		return fmt.Errorf("get sequence: %w", err)
 	}
@@ -294,30 +307,33 @@ func (s *Service) sequenceDetails(
 	return nil
 }
 
-func (s *Service) extensionDetails(
-	ctx context.Context,
-	result *dto.GetObjectDetailsOutput,
-) error {
+func (s *Service) extensionDetails(ctx context.Context, result *dto.GetObjectDetailsOutput) error {
+
 	var version string
 	var description *string
 
-	err := s.pool.QueryRow(ctx, `
-		SELECT
-			e.extversion,
-			d.description
-		FROM pg_catalog.pg_extension e
-		JOIN pg_catalog.pg_namespace n
-			ON n.oid = e.extnamespace
-		LEFT JOIN pg_catalog.pg_description d
-			ON d.objoid = e.oid
-			AND d.classoid = 'pg_catalog.pg_extension'::regclass
-		WHERE n.nspname = $1
-		  AND e.extname = $2
-		  AND has_schema_privilege(n.oid, 'USAGE')
-	`, result.SchemaName, result.ObjectName).Scan(
-		&version,
-		&description,
-	)
+	err := s.pool.
+		QueryRow(
+			ctx,
+			`SELECT
+				e.extversion,
+				d.description
+			FROM 
+				pg_catalog.pg_extension AS e
+			JOIN 
+				pg_catalog.pg_namespace AS n ON n.oid = e.extnamespace
+			LEFT JOIN 
+				pg_catalog.pg_description AS d ON d.objoid = e.oid AND d.classoid = 'pg_catalog.pg_extension'::regclass
+			WHERE 
+				n.nspname = $1
+				AND e.extname = $2
+				AND has_schema_privilege(n.oid, 'USAGE')`,
+			result.SchemaName,
+			result.ObjectName).
+		Scan(
+			&version,
+			&description,
+		)
 
 	if errors.Is(err, pgx.ErrNoRows) {
 		return fmt.Errorf("extension not found or access denied")

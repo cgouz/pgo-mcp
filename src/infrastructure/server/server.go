@@ -14,6 +14,9 @@ import (
 
 	objecthandler "github.com/cgouz/pgo-mcp/src/modules/object/handler"
 	objectservice "github.com/cgouz/pgo-mcp/src/modules/object/service"
+
+	queryhandler "github.com/cgouz/pgo-mcp/src/modules/query/handler"
+	queryservice "github.com/cgouz/pgo-mcp/src/modules/query/service"
 )
 
 type Server struct {
@@ -27,6 +30,9 @@ func New(host, port string, pool *pgxpool.Pool) *Server {
 
 	objectService := objectservice.New(pool)
 	objectHandler := objecthandler.New(objectService)
+
+	queryService := queryservice.New(pool)
+	queryHandler := queryhandler.New(queryService)
 
 	mcpServer := mcp.NewServer(
 		&mcp.Implementation{
@@ -54,6 +60,44 @@ func New(host, port string, pool *pgxpool.Pool) *Server {
 			},
 			objectHandler.ListObjects,
 		)
+
+		mcp.AddTool(
+			mcpServer,
+			&mcp.Tool{
+				Name:        "get_object_details",
+				Description: "Get details of a specific object in the connected PostgreSQL database",
+			},
+			objectHandler.GetObjectDetails,
+		)
+
+		mcp.AddTool(
+			mcpServer,
+			&mcp.Tool{
+				Name:        "execute_sql",
+				Description: "Execute a read-only SQL query against PostgreSQL",
+			},
+			queryHandler.ExecuteSQL,
+		)
+
+		mcp.AddTool(
+			mcpServer,
+			&mcp.Tool{
+				Name:        "explain_query",
+				Description: "Explain a PostgreSQL query execution plan, optionally collecting actual execution statistics",
+			},
+			queryHandler.ExplainQuery,
+		)
+
+		mcp.AddTool(
+			mcpServer,
+			&mcp.Tool{
+				Name: "analyze_query_indexes",
+				Description: "Analyze PostgreSQL query plans, " +
+					"existing indexes and potential index issues",
+			},
+			queryHandler.AnalyzeQueryIndexes,
+		)
+
 	}
 
 	handler := mcp.NewStreamableHTTPHandler(

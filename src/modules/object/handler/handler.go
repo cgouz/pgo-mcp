@@ -38,3 +38,15 @@ func (h *Handler) ListObjects(ctx context.Context, req *mcp.CallToolRequest, inp
 		Objects:    objects,
 	}, nil
 }
+
+func (h *Handler) GetObjectDetails(ctx context.Context, req *mcp.CallToolRequest, input dto.GetObjectDetailsInput) (*mcp.CallToolResult, dto.GetObjectDetailsOutput, error) {
+
+	details, err := h.service.GetObjectDetails(ctx, input)
+	{
+		if err != nil {
+			return nil, dto.GetObjectDetailsOutput{}, err
+		}
+	}
+
+	return nil, details, nil
+}

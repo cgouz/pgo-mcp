@@ -73,13 +73,15 @@ func New(host, port string, pool *pgxpool.Pool, authToken string, cfg config.Con
 		},
 		nil,
 	)
+	outputSchemas := toolOutputSchemas()
 
 	{
 		mcp.AddTool(
 			mcpServer,
 			&mcp.Tool{
-				Name:        "list_schemas",
-				Description: "List all schemas in the connected PostgreSQL database",
+				Name:         "list_schemas",
+				Description:  "List all schemas in the connected PostgreSQL database",
+				OutputSchema: outputSchemas["list_schemas"],
 			},
 			schemaHandler.ListSchemas,
 		)
@@ -87,8 +89,9 @@ func New(host, port string, pool *pgxpool.Pool, authToken string, cfg config.Con
 		mcp.AddTool(
 			mcpServer,
 			&mcp.Tool{
-				Name:        "list_objects",
-				Description: "List all objects in the connected PostgreSQL database",
+				Name:         "list_objects",
+				Description:  "List all objects in the connected PostgreSQL database",
+				OutputSchema: outputSchemas["list_objects"],
 			},
 			objectHandler.ListObjects,
 		)
@@ -96,8 +99,9 @@ func New(host, port string, pool *pgxpool.Pool, authToken string, cfg config.Con
 		mcp.AddTool(
 			mcpServer,
 			&mcp.Tool{
-				Name:        "get_object_details",
-				Description: "Get details of a specific object in the connected PostgreSQL database",
+				Name:         "get_object_details",
+				Description:  "Get details of a specific object in the connected PostgreSQL database",
+				OutputSchema: outputSchemas["get_object_details"],
 			},
 			objectHandler.GetObjectDetails,
 		)
@@ -105,8 +109,9 @@ func New(host, port string, pool *pgxpool.Pool, authToken string, cfg config.Con
 		mcp.AddTool(
 			mcpServer,
 			&mcp.Tool{
-				Name:        "execute_sql",
-				Description: "Execute a read-only SQL query against PostgreSQL",
+				Name:         "execute_sql",
+				Description:  "Execute a read-only SQL query against PostgreSQL",
+				OutputSchema: outputSchemas["execute_sql"],
 			},
 			queryHandler.ExecuteSQL,
 		)
@@ -114,8 +119,9 @@ func New(host, port string, pool *pgxpool.Pool, authToken string, cfg config.Con
 		mcp.AddTool(
 			mcpServer,
 			&mcp.Tool{
-				Name:        "explain_query",
-				Description: "Explain a PostgreSQL query execution plan, optionally collecting actual execution statistics",
+				Name:         "explain_query",
+				Description:  "Explain a PostgreSQL query execution plan, optionally collecting actual execution statistics",
+				OutputSchema: outputSchemas["explain_query"],
 			},
 			queryHandler.ExplainQuery,
 		)
@@ -126,6 +132,7 @@ func New(host, port string, pool *pgxpool.Pool, authToken string, cfg config.Con
 				Name: "analyze_query_indexes",
 				Description: "Analyze PostgreSQL query plans, " +
 					"existing indexes and potential index issues",
+				OutputSchema: outputSchemas["analyze_query_indexes"],
 			},
 			queryHandler.AnalyzeQueryIndexes,
 		)
@@ -136,6 +143,7 @@ func New(host, port string, pool *pgxpool.Pool, authToken string, cfg config.Con
 				Name: "get_top_queries",
 				Description: "Get PostgreSQL queries ranked by total " +
 					"execution time, mean execution time, calls or rows",
+				OutputSchema: outputSchemas["get_top_queries"],
 			},
 			queryHandler.GetTopQueries,
 		)
@@ -147,6 +155,7 @@ func New(host, port string, pool *pgxpool.Pool, authToken string, cfg config.Con
 				Description: "Analyze PostgreSQL database health, " +
 					"connections, transactions, cache, deadlocks " +
 					"and vacuum statistics",
+				OutputSchema: outputSchemas["analyze_db_health"],
 			},
 			diagnosticsHandler.AnalyzeDBHealth,
 		)
@@ -157,6 +166,7 @@ func New(host, port string, pool *pgxpool.Pool, authToken string, cfg config.Con
 				Name: "analyze_workload_indexes",
 				Description: "Analyze PostgreSQL workload statistics, " +
 					"query execution time and index usage",
+				OutputSchema: outputSchemas["analyze_workload_indexes"],
 			},
 			indexHandler.AnalyzeWorkloadIndexes,
 		)

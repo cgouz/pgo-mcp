@@ -294,14 +294,14 @@ func (s *Service) sequenceDetails(ctx context.Context, oid uint32, result *dto.G
 		return fmt.Errorf("get sequence: %w", err)
 	}
 
-	result.Metadata = map[string]any{
-		"data_type": dataType,
-		"start":     start,
-		"increment": increment,
-		"min":       minimum,
-		"max":       maximum,
-		"cache":     cache,
-		"cycle":     cycle,
+	result.Metadata = &dto.Metadata{
+		DataType:  &dataType,
+		Start:     &start,
+		Increment: &increment,
+		Minimum:   &minimum,
+		Maximum:   &maximum,
+		Cache:     &cache,
+		Cycle:     &cycle,
 	}
 
 	return nil
@@ -342,9 +342,9 @@ func (s *Service) extensionDetails(ctx context.Context, result *dto.GetObjectDet
 		return fmt.Errorf("get extension: %w", err)
 	}
 
-	result.Metadata = map[string]any{
-		"version":     version,
-		"description": description,
+	result.Metadata = &dto.Metadata{
+		Version:     &version,
+		Description: &description,
 	}
 
 	return nil

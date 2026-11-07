@@ -73,7 +73,7 @@ func (s *Service) ExecuteSQL(ctx context.Context, sqlQuery string) (*dto.Execute
 
 	result := &dto.ExecuteSQLOutput{
 		Columns: make([]string, 0, len(fields)),
-		Rows:    make([][]any, 0),
+		Rows:    make([][]*string, 0),
 	}
 
 	for _, field := range fields {
@@ -96,7 +96,7 @@ func (s *Service) ExecuteSQL(ctx context.Context, sqlQuery string) (*dto.Execute
 			}
 		}
 
-		row := make([]any, len(values))
+		row := make([]*string, len(values))
 
 		for i, value := range values {
 			row[i] = normalize(value)
@@ -127,15 +127,19 @@ func (s *Service) ExecuteSQL(ctx context.Context, sqlQuery string) (*dto.Execute
 	return result, nil
 }
 
-func normalize(value any) any {
+func normalize(value any) *string {
+	var result string
+
 	switch v := value.(type) {
 	case nil:
 		return nil
 	case []byte:
-		return "\\x" + hex.EncodeToString(v)
+		result = "\\x" + hex.EncodeToString(v)
 	case time.Time:
-		return v.Format(time.RFC3339Nano)
+		result = v.Format(time.RFC3339Nano)
 	default:
-		return fmt.Sprint(v)
+		result = fmt.Sprint(v)
 	}
+
+	return &result
 }

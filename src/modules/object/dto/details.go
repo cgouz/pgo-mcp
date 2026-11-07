@@ -25,6 +25,18 @@ type Index struct {
 	Definition string `json:"definition"`
 }
 
+type Metadata struct {
+	DataType    *string  `json:"data_type,omitempty"`
+	Start       *int64   `json:"start,omitempty"`
+	Increment   *int64   `json:"increment,omitempty"`
+	Minimum     *int64   `json:"min,omitempty"`
+	Maximum     *int64   `json:"max,omitempty"`
+	Cache       *int64   `json:"cache,omitempty"`
+	Cycle       *bool    `json:"cycle,omitempty"`
+	Version     *string  `json:"version,omitempty"`
+	Description **string `json:"description,omitempty"`
+}
+
 type GetObjectDetailsOutput struct {
 	SchemaName  string       `json:"schema_name"`
 	ObjectName  string       `json:"object_name"`
@@ -33,5 +45,5 @@ type GetObjectDetailsOutput struct {
 	Constraints []Constraint `json:"constraints,omitempty"`
 	Indexes     []Index      `json:"indexes,omitempty"`
 	Definition  string       `json:"definition,omitempty"`
-	Metadata    any          `json:"metadata,omitempty"`
+	Metadata    *Metadata    `json:"metadata,omitempty"`
 }

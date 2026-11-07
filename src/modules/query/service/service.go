@@ -14,18 +14,16 @@ import (
 	"github.com/cgouz/pgo-mcp/src/modules/query/dto"
 )
 
-const (
-	queryTimeout = 10 * time.Second
-	maxRows      = 100
-	maxBytes     = 1 << 20
-)
-
 type Service struct {
-	pool *pgxpool.Pool
+	pool    *pgxpool.Pool
+	options Options
 }
 
-func New(pool *pgxpool.Pool) *Service {
-	return &Service{pool: pool}
+func New(pool *pgxpool.Pool, options Options) *Service {
+	return &Service{
+		pool:    pool,
+		options: options,
+	}
 }
 
 func (s *Service) ExecuteSQL(ctx context.Context, sqlQuery string) (*dto.ExecuteSQLOutput, error) {
@@ -34,7 +32,7 @@ func (s *Service) ExecuteSQL(ctx context.Context, sqlQuery string) (*dto.Execute
 		return nil, fmt.Errorf("sql query is required")
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, queryTimeout)
+	ctx, cancel := context.WithTimeout(ctx, s.options.Timeout)
 
 	defer cancel()
 
@@ -56,7 +54,8 @@ func (s *Service) ExecuteSQL(ctx context.Context, sqlQuery string) (*dto.Execute
 	if _, err := tx.
 		Exec(
 			ctx,
-			"SET LOCAL statement_timeout = '10s'",
+			"SELECT set_config('statement_timeout', $1, true)",
+			s.options.Timeout.String(),
 		); err != nil {
 		return nil, fmt.Errorf("set timeout: %w", err)
 	}
@@ -85,7 +84,7 @@ func (s *Service) ExecuteSQL(ctx context.Context, sqlQuery string) (*dto.Execute
 
 	for rows.Next() {
 
-		if result.RowCount >= maxRows {
+		if result.RowCount >= s.options.MaxRows {
 			result.Truncated = true
 			break
 		}
@@ -110,7 +109,7 @@ func (s *Service) ExecuteSQL(ctx context.Context, sqlQuery string) (*dto.Execute
 			}
 		}
 
-		if size+len(data) > maxBytes {
+		if size+len(data) > s.options.MaxBytes {
 			result.Truncated = true
 			break
 		}

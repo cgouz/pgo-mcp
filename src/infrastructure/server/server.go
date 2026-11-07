@@ -9,6 +9,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/cgouz/pgo-mcp/src/infrastructure/auth"
+	"github.com/cgouz/pgo-mcp/src/infrastructure/config"
 	schemahandler "github.com/cgouz/pgo-mcp/src/modules/schema/handler"
 	schemaservice "github.com/cgouz/pgo-mcp/src/modules/schema/service"
 
@@ -17,13 +19,19 @@ import (
 
 	queryhandler "github.com/cgouz/pgo-mcp/src/modules/query/handler"
 	queryservice "github.com/cgouz/pgo-mcp/src/modules/query/service"
+
+	diagnosticshandler "github.com/cgouz/pgo-mcp/src/modules/diagnostics/handler"
+	diagnosticsservice "github.com/cgouz/pgo-mcp/src/modules/diagnostics/service"
+
+	indexhandler "github.com/cgouz/pgo-mcp/src/modules/index/handler"
+	indexservice "github.com/cgouz/pgo-mcp/src/modules/index/service"
 )
 
 type Server struct {
 	http *http.Server
 }
 
-func New(host, port string, pool *pgxpool.Pool) *Server {
+func New(host, port string, pool *pgxpool.Pool, authToken string, cfg config.Config) *Server {
 
 	schemaService := schemaservice.New(pool)
 	schemaHandler := schemahandler.New(schemaService)
@@ -31,8 +39,32 @@ func New(host, port string, pool *pgxpool.Pool) *Server {
 	objectService := objectservice.New(pool)
 	objectHandler := objecthandler.New(objectService)
 
-	queryService := queryservice.New(pool)
+	queryService := queryservice.New(
+		pool,
+		queryservice.Options{
+			Timeout:  cfg.QueryTimeout,
+			MaxRows:  cfg.QueryMaxRows,
+			MaxBytes: cfg.QueryMaxBytes,
+		},
+	)
 	queryHandler := queryhandler.New(queryService)
+
+	diagnosticsService := diagnosticsservice.New(
+		pool,
+		diagnosticsservice.Options{
+			Timeout: cfg.QueryTimeout,
+		},
+	)
+	diagnosticsHandler := diagnosticshandler.New(diagnosticsService)
+
+	indexService := indexservice.New(
+		pool,
+		indexservice.Options{
+			Timeout: cfg.QueryTimeout,
+		},
+	)
+
+	indexHandler := indexhandler.New(indexService)
 
 	mcpServer := mcp.NewServer(
 		&mcp.Implementation{
@@ -98,6 +130,36 @@ func New(host, port string, pool *pgxpool.Pool) *Server {
 			queryHandler.AnalyzeQueryIndexes,
 		)
 
+		mcp.AddTool(
+			mcpServer,
+			&mcp.Tool{
+				Name: "get_top_queries",
+				Description: "Get PostgreSQL queries ranked by total " +
+					"execution time, mean execution time, calls or rows",
+			},
+			queryHandler.GetTopQueries,
+		)
+
+		mcp.AddTool(
+			mcpServer,
+			&mcp.Tool{
+				Name: "analyze_db_health",
+				Description: "Analyze PostgreSQL database health, " +
+					"connections, transactions, cache, deadlocks " +
+					"and vacuum statistics",
+			},
+			diagnosticsHandler.AnalyzeDBHealth,
+		)
+
+		mcp.AddTool(
+			mcpServer,
+			&mcp.Tool{
+				Name: "analyze_workload_indexes",
+				Description: "Analyze PostgreSQL workload statistics, " +
+					"query execution time and index usage",
+			},
+			indexHandler.AnalyzeWorkloadIndexes,
+		)
 	}
 
 	handler := mcp.NewStreamableHTTPHandler(
@@ -109,7 +171,7 @@ func New(host, port string, pool *pgxpool.Pool) *Server {
 
 	mux := http.NewServeMux()
 
-	mux.Handle("/mcp", handler)
+	mux.Handle("/mcp", auth.Bearer(authToken, handler))
 
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)

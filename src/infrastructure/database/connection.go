@@ -8,7 +8,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-func Connect(ctx context.Context, uri string) (*pgxpool.Pool, error) {
+func Connect(ctx context.Context, uri string, maxConns, minConns int32) (*pgxpool.Pool, error) {
 
 	cfg, err := pgxpool.ParseConfig(uri)
 	{
@@ -16,8 +16,9 @@ func Connect(ctx context.Context, uri string) (*pgxpool.Pool, error) {
 			return nil, fmt.Errorf("parse database config: %w", err)
 		}
 
-		cfg.MaxConns = 5
-		cfg.MinConns = 0
+		cfg.MaxConns = maxConns
+		cfg.MinConns = minConns
+
 	}
 
 	pool, err := pgxpool.NewWithConfig(ctx, cfg)

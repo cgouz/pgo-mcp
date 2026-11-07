@@ -24,7 +24,7 @@ func (s *Service) ExplainQuery(ctx context.Context, input dto.ExplainQueryInput)
 		}
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, queryTimeout)
+	ctx, cancel := context.WithTimeout(ctx, s.options.Timeout)
 
 	defer cancel()
 
@@ -42,9 +42,9 @@ func (s *Service) ExplainQuery(ctx context.Context, input dto.ExplainQueryInput)
 		defer tx.Rollback(context.Background())
 	}
 
-	if _, err := tx.Exec(
-		ctx,
-		"SET LOCAL statement_timeout = '10s'",
+	if _, err = tx.Exec(ctx,
+		"SELECT set_config('statement_timeout', $1, true)",
+		s.options.Timeout.String(),
 	); err != nil {
 		return nil, fmt.Errorf("set timeout: %w", err)
 	}
@@ -65,7 +65,7 @@ func (s *Service) ExplainQuery(ctx context.Context, input dto.ExplainQueryInput)
 			return nil, fmt.Errorf("explain query: %w", err)
 		}
 
-		if len(raw) > maxBytes {
+		if len(raw) > s.options.MaxBytes {
 			return nil, fmt.Errorf("execution plan exceeds size limit")
 		}
 	}

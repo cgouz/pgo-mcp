@@ -31,7 +31,7 @@ func Run() error {
 
 	defer stop()
 
-	pool, err := database.Connect(ctx, cfg.DatabaseURI)
+	pool, err := database.Connect(ctx, cfg.DatabaseURI, cfg.DBMaxConns, cfg.DBMinConns)
 	{
 		if err != nil {
 			return err
@@ -53,7 +53,7 @@ func Run() error {
 		slog.Info("PostgreSQL connected", "database", dbName)
 	}
 
-	srv := server.New(cfg.MCPHost, cfg.MCPPort, pool)
+	srv := server.New(cfg.MCPHost, cfg.MCPPort, pool, cfg.MCPAuthToken, cfg)
 
 	errCh := make(chan error, 1)
 

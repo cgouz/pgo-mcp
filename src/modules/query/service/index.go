@@ -14,6 +14,9 @@ const largeTableBytes int64 = 16 << 20
 
 func (s *Service) AnalyzeQueryIndexes(ctx context.Context, input dto.AnalyzeQueryIndexesInput) (*dto.AnalyzeQueryIndexesOutput, error) {
 
+	ctx, cancel := context.WithTimeout(ctx, s.options.Timeout)
+	defer cancel()
+
 	explained, err := s.ExplainQuery(
 		ctx, dto.ExplainQueryInput{
 			SQL:     input.SQL,

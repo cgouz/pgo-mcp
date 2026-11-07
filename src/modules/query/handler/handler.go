@@ -52,3 +52,15 @@ func (h *Handler) AnalyzeQueryIndexes(ctx context.Context, req *mcp.CallToolRequ
 
 	return nil, result, nil
 }
+
+func (h *Handler) GetTopQueries(ctx context.Context, req *mcp.CallToolRequest, input dto.GetTopQueriesInput) (*mcp.CallToolResult, *dto.GetTopQueriesOutput, error) {
+
+	result, err := h.service.GetTopQueries(ctx, input)
+	{
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+
+	return nil, result, nil
+}

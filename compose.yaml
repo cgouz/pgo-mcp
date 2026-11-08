@@ -5,7 +5,7 @@ services:
       dockerfile: Dockerfile
     restart: unless-stopped
     env_file:
-      - ${PGO_MCP_ENV_FILE:-resources/env/example.env}
+      - ${PGO_MCP_ENV_FILE:-.docker.env}
     environment:
       MCP_HOST: 0.0.0.0
       MCP_PORT: 8001

@@ -1,148 +1,150 @@
-# pgo-mcp
-pgo-mcp
-![alt text](image.png)
+# PGO MCP
 
-# checking
-```bash
-npx @modelcontextprotocol/inspector --cli \
-  http://127.0.0.1:8001/mcp \
-  --transport http \
-  --method tools/list
-```
+[![CI](https://github.com/cgouz/pgo-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/cgouz/pgo-mcp/actions/workflows/ci.yml)
+[![GitHub release](https://img.shields.io/github/v/release/cgouz/pgo-mcp)](https://github.com/cgouz/pgo-mcp/releases)
+[![Go](https://img.shields.io/badge/Go-1.25.7-00ADD8?logo=go)](https://go.dev/)
 
-# tool calling
-## calling to list schemas
-```bash
-npx @modelcontextprotocol/inspector --cli \
-  http://127.0.0.1:8001/mcp \
-  --transport http \
-  --method tools/call \
-  --tool-name list_schemas
-```
+PGO MCP — Go dasturlash tilida yozilgan PostgreSQL uchun Model Context Protocol (MCP) serveri. U ma’lumotlar bazasi tuzilmasini ko‘rish, SQL so‘rovlarini faqat o‘qish tranzaksiyasida bajarish, bajarilish rejasini va indekslardan foydalanishni tahlil qilish hamda ma’lumotlar bazasi holatini kuzatish imkonini beradi.
 
-## calling to list_objects
-``` bash
-npx @modelcontextprotocol/inspector --cli \
-  http://127.0.0.1:8001/mcp \
-  --transport http \
-  --method tools/call \
-  --tool-name list_objects \
-  --tool-arg schema_name=public \
-  --tool-arg object_type=table
-```
+Server MCP Streamable HTTP transportidan foydalanadi. `/mcp` endpoint’i Bearer authentication bilan himoyalangan, `/health` endpoint’i esa ochiq readiness tekshiruvi uchun mo‘ljallangan.
 
-**tool args list:**
-  - table
-  - view
-  - sequence
-  - extension
+## Imkoniyatlar
 
-unsupported object type error test:
-```bash
-  npx @modelcontextprotocol/inspector --cli \
-  http://127.0.0.1:8001/mcp \
-  --transport http \
-  --method tools/call \
-  --tool-name list_objects \
-  --tool-arg schema_name=public \
-  --tool-arg object_type=invalid
-```
+- PostgreSQL schema, table, view, sequence va extension obyektlarini ko‘rish.
+- SQL natijalarini satr va javob hajmi cheklovlari bilan olish.
+- `EXPLAIN (FORMAT JSON)` va ixtiyoriy `ANALYZE` rejimi.
+- Alohida Query va umumiy workload bo‘yicha Index tahlili.
+- Connection, transaction, cache, deadlock, temporary file va vacuum statistikasi.
+- `pg_stat_statements` asosida eng muhim so‘rovlarni ko‘rish.
+- Read-only transaction, statement timeout va PostgreSQL privilege tekshiruvlari.
+- `linux/amd64` va `linux/arm64` uchun non-root Docker image.
 
-## calling to get_object_details
-```bash
-npx @modelcontextprotocol/inspector --cli \
-  http://127.0.0.1:8001/mcp \
-  --transport http \
-  --method tools/call \
-  --tool-name get_object_details \
-  --tool-arg schema_name=public \
-  --tool-arg object_name=procurements \
-  --tool-arg object_type=table
-```
+## MCP vositalari
 
-# Docker
+| Vosita | Vazifasi |
+| --- | --- |
+| `list_schemas` | Mavjud schemalarni qaytaradi. |
+| `list_objects` | Schema ichidagi table, view, sequence yoki extension ro‘yxatini beradi. |
+| `get_object_details` | Obyekt ustunlari, constraint, index, definition yoki metadata ma’lumotlarini beradi. |
+| `execute_sql` | SQL so‘rovini read-only transaction ichida bajaradi. |
+| `explain_query` | Query bajarilish rejasini JSON ko‘rinishida qaytaradi. |
+| `analyze_query_indexes` | Bitta Query rejasi va unga aloqador indekslarni tahlil qiladi. |
+| `analyze_workload_indexes` | `pg_stat_statements` va Index statistikasi asosida workload’ni tahlil qiladi. |
+| `analyze_db_health` | Ma’lumotlar bazasi holati va ehtimoliy muammolarni ko‘rsatadi. |
+| `get_top_queries` | So‘rovlarni vaqt, chaqiruv yoki qaytargan satrlar bo‘yicha saralaydi. |
 
-The Compose service joins an external Docker network named `pgo-mcp` by default. The existing PostgreSQL container currently uses Docker's default `bridge` network. Create a user-defined network and attach PostgreSQL once, without restarting it:
+To‘liq input va output tavsifi: [MCP vositalari ma’lumotnomasi](docs/tools.md).
+
+## Docker orqali tezkor ishga tushirish
+
+Image’ni yuklab oling:
 
 ```bash
-docker network create pgo-mcp
-docker network connect pgo-mcp postgres
+docker pull ghcr.io/cgouz/pgo-mcp:0.1.0
 ```
 
-Copy the environment example and replace the placeholders with local secrets. Keep this file uncommitted:
+Kamida 32 belgili token yarating va serverni ishga tushiring:
 
 ```bash
-cp resources/env/example.env .env.local
+export MCP_AUTH_TOKEN="$(openssl rand -hex 32)"
+
+docker run --rm \
+  --name pgo-mcp \
+  --read-only \
+  --cap-drop ALL \
+  --security-opt no-new-privileges:true \
+  -p 127.0.0.1:8001:8001 \
+  -e DATABASE_URI='postgresql://pgo_mcp_reader:CHANGE_ME@host.docker.internal:5432/procurement?sslmode=disable' \
+  -e MCP_HOST=0.0.0.0 \
+  -e MCP_PORT=8001 \
+  -e MCP_AUTH_TOKEN \
+  ghcr.io/cgouz/pgo-mcp:0.1.0
 ```
 
-`DATABASE_URI` should use `postgres` as the host when both containers share the network. `127.0.0.1` on macOS addresses the host, while `127.0.0.1` inside a container addresses that container itself. `MCP_HOST=0.0.0.0` makes the server listen on all container interfaces; Compose still publishes it only on the host's `127.0.0.1` by default.
-
-Build and start PGO MCP:
+macOS va Docker Desktop’da `host.docker.internal` container ichidan host’dagi PostgreSQL’ga murojaat qiladi. PostgreSQL boshqa container’da ishlasa, ikkala containerni user-defined Docker network’ga ulang va URI’da PostgreSQL container DNS nomidan foydalaning.
 
 ```bash
-PGO_MCP_ENV_FILE=.env.local docker compose build
-PGO_MCP_ENV_FILE=.env.local docker compose up -d
-docker compose ps
-docker compose logs --tail=100 pgo-mcp
 curl --fail http://127.0.0.1:8001/health
 ```
 
-List MCP tools with authentication:
+Batafsil yo‘riqnoma: [Ishni boshlash](docs/getting-started.md).
 
-```bash
-set -a
-. ./.env.local
-set +a
+## Konfiguratsiya
 
-npx @modelcontextprotocol/inspector --cli \
-  http://127.0.0.1:8001/mcp \
-  --transport http \
-  --method tools/list \
-  --header "Authorization: Bearer ${MCP_AUTH_TOKEN}" \
-  --strict
+Asosiy o‘zgaruvchilar:
+
+```dotenv
+DATABASE_URI=postgresql://pgo_mcp_reader:CHANGE_ME@postgres:5432/procurement?sslmode=disable
+DB_MAX_CONNS=5
+DB_MIN_CONNS=0
+MCP_HOST=0.0.0.0
+MCP_PORT=8001
+MCP_AUTH_TOKEN=REPLACE_WITH_A_RANDOM_64_CHARACTER_HEX_TOKEN
+QUERY_TIMEOUT=10s
+QUERY_MAX_ROWS=100
+QUERY_MAX_BYTES=1048576
 ```
 
-Stop and remove only the PGO MCP application container:
+Aniq default qiymatlar va validatsiya chegaralari: [Konfiguratsiya ma’lumotnomasi](docs/configuration.md).
 
-```bash
-PGO_MCP_ENV_FILE=.env.local docker compose down
+## MCP client ulanishi
+
+Server manzili: `http://127.0.0.1:8001/mcp`. Har bir MCP so‘roviga quyidagi header yuborilishi kerak:
+
+```http
+Authorization: Bearer REPLACE_WITH_YOUR_TOKEN
 ```
 
-Set `PGO_MCP_NETWORK` if a different user-defined network is already attached to PostgreSQL. Set `MCP_PUBLISH_PORT` to change the macOS port without changing the container's internal port.
+Client’ga oid yo‘riqnomalar:
 
-# Continuous integration
+- [Claude Code](docs/clients/claude.md)
+- [Cursor](docs/clients/cursor.md)
+- [Visual Studio Code](docs/clients/vscode.md)
 
-CI runs for pushes to `main`, pull requests targeting `main`, and manual workflow dispatches. It verifies modules, formatting, vetting, package tests, compilation, the PostgreSQL-backed integration suite, and a single-platform Docker build.
+## Xavfsizlik
 
-The integration job starts PostgreSQL 17 with `pg_stat_statements`, creates an ephemeral read-only role and fixture database objects, starts PGO MCP on port 8002, and then runs the complete test suite. No local or production environment files are used.
+PGO MCP’ni faqat minimal privilege’ga ega PostgreSQL roli bilan ishlating. Bearer token transportni shifrlamaydi; localhost’dan tashqarida reverse proxy orqali TLS/HTTPS ishlating. `SELECT` huquqining o‘zi barcha function yoki tashqi side effect xavflarini yo‘q qilmaydi, shuning uchun roldan xavfli function’larni bajarish huquqini ham olib tashlash zarur.
 
-Run the independent checks locally with:
+Batafsil tavsiyalar va read-only rol namunasi: [Xavfsizlik](docs/security.md).
+
+## Dasturlash va test
+
+Talablar: Go `1.25.7`, PostgreSQL 17 va ixtiyoriy ravishda Docker.
 
 ```bash
+git clone https://github.com/cgouz/pgo-mcp.git
+cd pgo-mcp
 go mod verify
-gofmt -l .
 go vet ./...
-go test ./... -count=1
+go test ./src/... -count=1
 go build -o /tmp/pgo-mcp ./src
-docker compose config -q
-docker build -t pgo-mcp:ci-test .
 ```
 
-# Releases
+Integration test alohida `pgo_mcp_test` bazasi, fixture va ishlayotgan PGO MCP serverini talab qiladi. CI bu muhitni PostgreSQL 17 service container’ida avtomatik yaratadi. Lokal tartib [Ishni boshlash](docs/getting-started.md#source-koddan-ishga-tushirish) bo‘limida berilgan.
 
-To publish a release, create and push a valid semantic-version tag:
+## CI/CD va release
+
+CI `main` branch’ga push, `main` uchun pull request va qo‘lda ishga tushirishda format, module, vet, test, build, PostgreSQL-backed integration hamda Docker build tekshiruvlarini bajaradi.
+
+`v*` SemVer tag push qilinganda release workflow `linux/amd64` va `linux/arm64` image’larini GHCR’ga chiqaradi va GitHub Release yaratadi:
 
 ```bash
 git tag v0.1.0
 git push origin v0.1.0
 ```
 
-The release workflow validates the tag, builds `linux/amd64` and `linux/arm64` images, publishes semantic-version tags to `ghcr.io/cgouz/pgo-mcp`, and creates a GitHub Release containing the immutable image digest. Stable releases receive `latest`; prereleases such as `v0.2.0-rc.1` do not.
+Bu buyruqlar faqat maintainer release yaratmoqchi bo‘lganda bajariladi.
 
-After a release has been published, pull a specific version with:
+## Hujjatlar
 
-```bash
-docker pull ghcr.io/cgouz/pgo-mcp:0.1.0
-```
+- [Ishni boshlash](docs/getting-started.md)
+- [Konfiguratsiya](docs/configuration.md)
+- [MCP vositalari](docs/tools.md)
+- [Xavfsizlik](docs/security.md)
+- [Claude Code](docs/clients/claude.md)
+- [Cursor](docs/clients/cursor.md)
+- [Visual Studio Code](docs/clients/vscode.md)
 
-For Compose, set `image: ghcr.io/cgouz/pgo-mcp:0.1.0` on the `pgo-mcp` service and remove its `build` section. Continue using the same environment file, external PostgreSQL network, port mapping, healthcheck, and security settings.
+## Litsenziya
+
+Repository’da hozircha `LICENSE` fayli mavjud emas. Ochiq repository mavjudligi kodga avtomatik ravishda foydalanish, o‘zgartirish yoki tarqatish huquqini bermaydi. Ochiq manbali release uchun maintainer alohida litsenziya tanlab, `LICENSE` faylini qo‘shishi kerak.

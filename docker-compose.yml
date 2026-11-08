@@ -1,0 +1,32 @@
+
+services:
+  pgo-mcp:
+    image: ghcr.io/cgouz/pgo-mcp:0.1.0
+    container_name: pgo-mcp
+
+    restart: unless-stopped
+
+    env_file:
+      - .docker.env
+
+    environment:
+      MCP_HOST: "0.0.0.0"
+      MCP_PORT: "8001"
+
+    ports:
+      - "127.0.0.1:8001:8001"
+
+    networks:
+      - pgo-mcp
+
+    security_opt:
+      - no-new-privileges:true
+
+    cap_drop:
+      - ALL
+
+    read_only: true
+
+networks:
+  pgo-mcp:
+    external: true

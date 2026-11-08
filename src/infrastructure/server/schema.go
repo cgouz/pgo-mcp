@@ -5,6 +5,7 @@ import (
 
 	"github.com/google/jsonschema-go/jsonschema"
 
+	databasedto "github.com/cgouz/pgo-mcp/src/modules/database/dto"
 	diagnosticsdto "github.com/cgouz/pgo-mcp/src/modules/diagnostics/dto"
 	indexdto "github.com/cgouz/pgo-mcp/src/modules/index/dto"
 	objectdto "github.com/cgouz/pgo-mcp/src/modules/object/dto"
@@ -14,6 +15,7 @@ import (
 
 func toolOutputSchemas() map[string]*jsonschema.Schema {
 	return map[string]*jsonschema.Schema{
+		"list_databases":           outputSchema[databasedto.ListDatabasesOutput](),
 		"list_schemas":             outputSchema[schemadto.ListSchemasOutput](),
 		"list_objects":             outputSchema[objectdto.ListObjectsOutput](),
 		"get_object_details":       outputSchema[objectdto.GetObjectDetailsOutput](),

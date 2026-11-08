@@ -32,6 +32,10 @@ func (s *Service) ExecuteSQL(ctx context.Context, sqlQuery string) (*dto.Execute
 		return nil, fmt.Errorf("sql query is required")
 	}
 
+	if len(sqlQuery) > maxSQLBytes {
+		return nil, fmt.Errorf("sql query exceeds size limit")
+	}
+
 	ctx, cancel := context.WithTimeout(ctx, s.options.Timeout)
 
 	defer cancel()

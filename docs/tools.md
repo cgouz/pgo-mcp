@@ -2,11 +2,38 @@
 
 Barcha vositalar `http://127.0.0.1:8001/mcp` Streamable HTTP endpoint’i orqali chaqiriladi va to‘g‘ri Bearer token talab qiladi. Misollardagi `arguments` MCP `tools/call` argument obyektini bildiradi.
 
+`list_databases` dan tashqari barcha vositalar ixtiyoriy `database` string parametrini qabul qiladi. Parametr berilmasa yoki bo‘sh bo‘lsa, `DATABASE_URI` dagi default baza ishlatiladi. Qiymat faqat joriy tool chaqiruviga tegishli; u global holatni o‘zgartirmaydi. Nom `DATABASE_ALLOWED` siyosati va PostgreSQL `CONNECT` huquqidan o‘tishi shart.
+
+## `list_databases`
+
+Faol konfiguratsiya ruxsat bergan, template bo‘lmagan va PostgreSQL roli `CONNECT` qila oladigan bazalarni barqaror tartibda qaytaradi. Bu vosita yangi pool’larni avtomatik ochmaydi va connection URI yoki credential’larni ko‘rsatmaydi.
+
+Input parametrlari yo‘q.
+
+```json
+{
+  "name": "list_databases",
+  "arguments": {}
+}
+```
+
+```json
+{
+  "default": "procurement",
+  "databases": [
+    {"name": "analytics", "default": false},
+    {"name": "procurement", "default": true}
+  ]
+}
+```
+
+Discovery o‘chiq yoki allowlist bo‘sh bo‘lsa, faqat default baza qaytariladi.
+
 ## `list_schemas`
 
 Ulangan PostgreSQL bazasidagi schemalarni alifbo tartibida qaytaradi.
 
-Input parametrlari yo‘q.
+`database` dan boshqa input parametrlari yo‘q.
 
 ```json
 {
@@ -131,6 +158,7 @@ SQL so‘rovini PostgreSQL read-only transaction ichida bajaradi. Ustun tartibi 
 {
   "name": "execute_sql",
   "arguments": {
+    "database": "analytics",
     "sql": "SELECT id, status FROM public.procurements ORDER BY id LIMIT 2"
   }
 }

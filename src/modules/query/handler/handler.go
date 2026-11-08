@@ -5,21 +5,33 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/cgouz/pgo-mcp/src/infrastructure/database"
 	"github.com/cgouz/pgo-mcp/src/modules/query/dto"
 	"github.com/cgouz/pgo-mcp/src/modules/query/service"
 )
 
 type Handler struct {
-	service *service.Service
+	registry *database.Registry
+	options  service.Options
 }
 
-func New(s *service.Service) *Handler {
-	return &Handler{service: s}
+func New(registry *database.Registry, options service.Options) *Handler {
+	return &Handler{
+		registry: registry,
+		options:  options,
+	}
 }
 
 func (h *Handler) ExecuteSQL(ctx context.Context, req *mcp.CallToolRequest, input dto.ExecuteSQLInput) (*mcp.CallToolResult, *dto.ExecuteSQLOutput, error) {
 
-	result, err := h.service.ExecuteSQL(ctx, input.SQL)
+	pool, err := h.registry.Pool(ctx, input.Database)
+	{
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+
+	result, err := service.New(pool, h.options).ExecuteSQL(ctx, input.SQL)
 	{
 		if err != nil {
 			return nil, nil, err
@@ -31,7 +43,14 @@ func (h *Handler) ExecuteSQL(ctx context.Context, req *mcp.CallToolRequest, inpu
 
 func (h *Handler) ExplainQuery(ctx context.Context, req *mcp.CallToolRequest, input dto.ExplainQueryInput) (*mcp.CallToolResult, *dto.ExplainQueryOutput, error) {
 
-	result, err := h.service.ExplainQuery(ctx, input)
+	pool, err := h.registry.Pool(ctx, input.Database)
+	{
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+
+	result, err := service.New(pool, h.options).ExplainQuery(ctx, input)
 	{
 		if err != nil {
 			return nil, nil, err
@@ -43,7 +62,14 @@ func (h *Handler) ExplainQuery(ctx context.Context, req *mcp.CallToolRequest, in
 
 func (h *Handler) AnalyzeQueryIndexes(ctx context.Context, req *mcp.CallToolRequest, input dto.AnalyzeQueryIndexesInput) (*mcp.CallToolResult, *dto.AnalyzeQueryIndexesOutput, error) {
 
-	result, err := h.service.AnalyzeQueryIndexes(ctx, input)
+	pool, err := h.registry.Pool(ctx, input.Database)
+	{
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+
+	result, err := service.New(pool, h.options).AnalyzeQueryIndexes(ctx, input)
 	{
 		if err != nil {
 			return nil, nil, err
@@ -55,7 +81,14 @@ func (h *Handler) AnalyzeQueryIndexes(ctx context.Context, req *mcp.CallToolRequ
 
 func (h *Handler) GetTopQueries(ctx context.Context, req *mcp.CallToolRequest, input dto.GetTopQueriesInput) (*mcp.CallToolResult, *dto.GetTopQueriesOutput, error) {
 
-	result, err := h.service.GetTopQueries(ctx, input)
+	pool, err := h.registry.Pool(ctx, input.Database)
+	{
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+
+	result, err := service.New(pool, h.options).GetTopQueries(ctx, input)
 	{
 		if err != nil {
 			return nil, nil, err

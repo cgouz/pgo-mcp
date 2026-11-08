@@ -1,7 +1,8 @@
 package dto
 
 type ExecuteSQLInput struct {
-	SQL string `json:"sql" jsonschema:"SQL query to execute"`
+	Database string `json:"database,omitempty" jsonschema:"Target PostgreSQL database name"`
+	SQL      string `json:"sql" jsonschema:"SQL query to execute"`
 }
 
 type ExecuteSQLOutput struct {

@@ -3,8 +3,9 @@ package dto
 import "time"
 
 type GetTopQueriesInput struct {
-	SortBy string `json:"sort_by,omitempty" jsonschema:"Sort by total_time, mean_time, calls or rows"`
-	Limit  int    `json:"limit,omitempty" jsonschema:"Maximum queries to return, from 1 to 50"`
+	Database string `json:"database,omitempty" jsonschema:"Target PostgreSQL database name"`
+	SortBy   string `json:"sort_by,omitempty" jsonschema:"Sort by total_time, mean_time, calls or rows"`
+	Limit    int    `json:"limit,omitempty" jsonschema:"Maximum queries to return, from 1 to 50"`
 }
 
 type TopQuery struct {

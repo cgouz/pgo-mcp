@@ -19,7 +19,7 @@ func (s *Service) ExplainQuery(ctx context.Context, input dto.ExplainQueryInput)
 			return nil, fmt.Errorf("sql is required")
 		}
 
-		if len(sql) > 64*1024 {
+		if len(sql) > maxSQLBytes {
 			return nil, fmt.Errorf("sql exceeds size limit")
 		}
 	}

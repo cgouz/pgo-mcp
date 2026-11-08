@@ -31,13 +31,26 @@ func Run() error {
 
 	defer stop()
 
-	pool, err := database.Connect(ctx, cfg.DatabaseURI, cfg.DBMaxConns, cfg.DBMinConns)
+	registry, err := database.NewRegistry(
+		ctx,
+		cfg.DatabaseURI,
+		database.RegistryOptions{
+			Discovery: cfg.DatabaseDiscovery,
+			Allowed:   cfg.DatabaseAllowed,
+			AllowAll:  cfg.DatabaseAllowAll,
+			MaxPools:  cfg.DatabaseMaxPools,
+			MaxConns:  cfg.DBMaxConns,
+			MinConns:  cfg.DBMinConns,
+		},
+	)
 	{
 		if err != nil {
 			return err
 		}
-		defer pool.Close()
+		defer registry.Close()
 	}
+
+	pool := registry.Default()
 
 	var dbName string
 	{
@@ -53,7 +66,7 @@ func Run() error {
 		slog.Info("PostgreSQL connected", "database", dbName)
 	}
 
-	srv := server.New(cfg.MCPHost, cfg.MCPPort, pool, cfg.MCPAuthToken, cfg)
+	srv := server.New(cfg.MCPHost, cfg.MCPPort, registry, cfg.MCPAuthToken, cfg)
 
 	errCh := make(chan error, 1)
 

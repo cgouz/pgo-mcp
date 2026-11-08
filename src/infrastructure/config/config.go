@@ -10,7 +10,11 @@ import (
 )
 
 type Config struct {
-	DatabaseURI string
+	DatabaseURI       string
+	DatabaseDiscovery bool
+	DatabaseAllowed   []string
+	DatabaseAllowAll  bool
+	DatabaseMaxPools  int
 
 	MCPHost      string
 	MCPPort      string
@@ -25,6 +29,7 @@ type Config struct {
 }
 
 func Load() (Config, error) {
+	var err error
 
 	cfg := Config{
 		DatabaseURI:  os.Getenv("DATABASE_URI"),
@@ -35,6 +40,36 @@ func Load() (Config, error) {
 
 	if strings.TrimSpace(cfg.DatabaseURI) == "" {
 		return cfg, fmt.Errorf("DATABASE_URI is required")
+	}
+
+	cfg.DatabaseDiscovery, err = envBool("DATABASE_DISCOVERY", false)
+	{
+		if err != nil {
+			return cfg, err
+		}
+	}
+
+	cfg.DatabaseAllowed, cfg.DatabaseAllowAll, err = databaseAllowed(
+		os.Getenv("DATABASE_ALLOWED"),
+	)
+	{
+		if err != nil {
+			return cfg, err
+		}
+
+		if !cfg.DatabaseDiscovery &&
+			(cfg.DatabaseAllowAll || len(cfg.DatabaseAllowed) > 0) {
+			return cfg, fmt.Errorf(
+				"DATABASE_DISCOVERY must be true when DATABASE_ALLOWED is configured",
+			)
+		}
+	}
+
+	cfg.DatabaseMaxPools, err = envInt("DATABASE_MAX_POOLS", 5, 1, 100)
+	{
+		if err != nil {
+			return cfg, err
+		}
 	}
 
 	if len(cfg.MCPAuthToken) < 32 {
@@ -134,4 +169,55 @@ func envDuration(key string, fallback, minimum, maximum time.Duration) (time.Dur
 	}
 
 	return value, nil
+}
+
+func envBool(key string, fallback bool) (bool, error) {
+
+	raw := env(key, strconv.FormatBool(fallback))
+
+	value, err := strconv.ParseBool(raw)
+	if err != nil {
+		return false, fmt.Errorf("%s must be true or false", key)
+	}
+
+	return value, nil
+}
+
+func databaseAllowed(raw string) ([]string, bool, error) {
+
+	value := strings.TrimSpace(raw)
+	if value == "" {
+		return []string{}, false, nil
+	}
+
+	if value == "*" {
+		return []string{}, true, nil
+	}
+
+	parts := strings.Split(raw, ",")
+	allowed := make([]string, 0, len(parts))
+	seen := make(map[string]bool)
+
+	for _, part := range parts {
+		name := strings.TrimSpace(part)
+
+		if name == "" {
+			return nil, false, fmt.Errorf(
+				"DATABASE_ALLOWED contains an empty database name",
+			)
+		}
+
+		if name == "*" {
+			return nil, false, fmt.Errorf(
+				"DATABASE_ALLOWED wildcard cannot be combined with database names",
+			)
+		}
+
+		if !seen[name] {
+			allowed = append(allowed, name)
+			seen[name] = true
+		}
+	}
+
+	return allowed, false, nil
 }

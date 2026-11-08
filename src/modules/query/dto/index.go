@@ -1,7 +1,8 @@
 package dto
 
 type AnalyzeQueryIndexesInput struct {
-	SQL string `json:"sql" jsonschema:"SQL query to analyze for index usage"`
+	Database string `json:"database,omitempty" jsonschema:"Target PostgreSQL database name"`
+	SQL      string `json:"sql" jsonschema:"SQL query to analyze for index usage"`
 }
 
 type IndexScan struct {

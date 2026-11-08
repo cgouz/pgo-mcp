@@ -11,6 +11,7 @@ Server MCP Streamable HTTP transportidan foydalanadi. `/mcp` endpoint’i Bearer
 ## Imkoniyatlar
 
 - PostgreSQL schema, table, view, sequence va extension obyektlarini ko‘rish.
+- Bitta PostgreSQL server va URI orqali bir nechta ruxsat etilgan bazalar bilan ishlash.
 - SQL natijalarini satr va javob hajmi cheklovlari bilan olish.
 - `EXPLAIN (FORMAT JSON)` va ixtiyoriy `ANALYZE` rejimi.
 - Alohida Query va umumiy workload bo‘yicha Index tahlili.
@@ -23,6 +24,7 @@ Server MCP Streamable HTTP transportidan foydalanadi. `/mcp` endpoint’i Bearer
 
 | Vosita | Vazifasi |
 | --- | --- |
+| `list_databases` | Konfiguratsiya va `CONNECT` huquqi ruxsat bergan bazalarni qaytaradi. |
 | `list_schemas` | Mavjud schemalarni qaytaradi. |
 | `list_objects` | Schema ichidagi table, view, sequence yoki extension ro‘yxatini beradi. |
 | `get_object_details` | Obyekt ustunlari, constraint, index, definition yoki metadata ma’lumotlarini beradi. |
@@ -40,7 +42,7 @@ To‘liq input va output tavsifi: [MCP vositalari ma’lumotnomasi](docs/tools.m
 Image’ni yuklab oling:
 
 ```bash
-docker pull ghcr.io/cgouz/pgo-mcp:0.1.0
+docker pull ghcr.io/cgouz/pgo-mcp:0.2.0
 ```
 
 Kamida 32 belgili token yarating va serverni ishga tushiring:
@@ -58,7 +60,7 @@ docker run --rm \
   -e MCP_HOST=0.0.0.0 \
   -e MCP_PORT=8001 \
   -e MCP_AUTH_TOKEN \
-  ghcr.io/cgouz/pgo-mcp:0.1.0
+  ghcr.io/cgouz/pgo-mcp:0.2.0
 ```
 
 macOS va Docker Desktop’da `host.docker.internal` container ichidan host’dagi PostgreSQL’ga murojaat qiladi. PostgreSQL boshqa container’da ishlasa, ikkala containerni user-defined Docker network’ga ulang va URI’da PostgreSQL container DNS nomidan foydalaning.
@@ -75,6 +77,9 @@ Asosiy o‘zgaruvchilar:
 
 ```dotenv
 DATABASE_URI=postgresql://pgo_mcp_reader:CHANGE_ME@postgres:5432/procurement?sslmode=disable
+DATABASE_DISCOVERY=false
+DATABASE_ALLOWED=
+DATABASE_MAX_POOLS=5
 DB_MAX_CONNS=5
 DB_MIN_CONNS=0
 MCP_HOST=0.0.0.0
@@ -84,6 +89,16 @@ QUERY_TIMEOUT=10s
 QUERY_MAX_ROWS=100
 QUERY_MAX_BYTES=1048576
 ```
+
+Bir serverdagi rol `CONNECT` qila oladigan barcha eligible bazalarni explicit yoqish:
+
+```dotenv
+DATABASE_DISCOVERY=true
+DATABASE_ALLOWED=*
+DATABASE_MAX_POOLS=5
+```
+
+Wildcard rejimi PostgreSQL `PUBLIC CONNECT` orqali administrator alohida nomlamagan bazalarni ham ochishi mumkin. Aniq allowlist xavfsizroq tanlovdir; batafsil siyosat [Konfiguratsiya ma’lumotnomasi](docs/configuration.md) da berilgan.
 
 Aniq default qiymatlar va validatsiya chegaralari: [Konfiguratsiya ma’lumotnomasi](docs/configuration.md).
 
@@ -129,14 +144,15 @@ CI `main` branch’ga push, `main` uchun pull request va qo‘lda ishga tushiris
 `v*` SemVer tag push qilinganda release workflow `linux/amd64` va `linux/arm64` image’larini GHCR’ga chiqaradi va GitHub Release yaratadi:
 
 ```bash
-git tag v0.1.0
-git push origin v0.1.0
+git tag v0.2.0
+git push origin v0.2.0
 ```
 
 Bu buyruqlar faqat maintainer release yaratmoqchi bo‘lganda bajariladi.
 
 ## Hujjatlar
 
+- [O‘zgarishlar tarixi](CHANGELOG.md)
 - [Ishni boshlash](docs/getting-started.md)
 - [Konfiguratsiya](docs/configuration.md)
 - [MCP vositalari](docs/tools.md)

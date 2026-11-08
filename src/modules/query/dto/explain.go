@@ -1,8 +1,9 @@
 package dto
 
 type ExplainQueryInput struct {
-	SQL     string `json:"sql" jsonschema:"SQL query to explain"`
-	Analyze bool   `json:"analyze,omitempty" jsonschema:"Execute the query and collect actual execution statistics"`
+	Database string `json:"database,omitempty" jsonschema:"Target PostgreSQL database name"`
+	SQL      string `json:"sql" jsonschema:"SQL query to explain"`
+	Analyze  bool   `json:"analyze,omitempty" jsonschema:"Execute the query and collect actual execution statistics"`
 }
 
 type ExplainQueryOutput struct {

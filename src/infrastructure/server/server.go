@@ -5,17 +5,18 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"time"
 
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/cgouz/pgo-mcp/src/infrastructure/auth"
 	"github.com/cgouz/pgo-mcp/src/infrastructure/config"
+	"github.com/cgouz/pgo-mcp/src/infrastructure/database"
+	databasehandler "github.com/cgouz/pgo-mcp/src/modules/database/handler"
+	databaseservice "github.com/cgouz/pgo-mcp/src/modules/database/service"
 	schemahandler "github.com/cgouz/pgo-mcp/src/modules/schema/handler"
-	schemaservice "github.com/cgouz/pgo-mcp/src/modules/schema/service"
 
 	objecthandler "github.com/cgouz/pgo-mcp/src/modules/object/handler"
-	objectservice "github.com/cgouz/pgo-mcp/src/modules/object/service"
 
 	queryhandler "github.com/cgouz/pgo-mcp/src/modules/query/handler"
 	queryservice "github.com/cgouz/pgo-mcp/src/modules/query/service"
@@ -31,51 +32,67 @@ type Server struct {
 	http *http.Server
 }
 
-func New(host, port string, pool *pgxpool.Pool, authToken string, cfg config.Config) *Server {
+const (
+	maxRequestBodyBytes = 256 * 1024
+	maxHeaderBytes      = 64 * 1024
+	sessionTimeout      = 30 * time.Minute
+)
 
-	schemaService := schemaservice.New(pool)
-	schemaHandler := schemahandler.New(schemaService)
+func New(host, port string, registry *database.Registry, authToken string, cfg config.Config) *Server {
 
-	objectService := objectservice.New(pool)
-	objectHandler := objecthandler.New(objectService)
+	databaseService := databaseservice.New(registry)
+	databaseHandler := databasehandler.New(databaseService)
 
-	queryService := queryservice.New(
-		pool,
-		queryservice.Options{
-			Timeout:  cfg.QueryTimeout,
-			MaxRows:  cfg.QueryMaxRows,
-			MaxBytes: cfg.QueryMaxBytes,
-		},
-	)
-	queryHandler := queryhandler.New(queryService)
+	schemaHandler := schemahandler.New(registry)
 
-	diagnosticsService := diagnosticsservice.New(
-		pool,
-		diagnosticsservice.Options{
-			Timeout: cfg.QueryTimeout,
-		},
-	)
-	diagnosticsHandler := diagnosticshandler.New(diagnosticsService)
+	objectHandler := objecthandler.New(registry)
 
-	indexService := indexservice.New(
-		pool,
-		indexservice.Options{
-			Timeout: cfg.QueryTimeout,
-		},
+	queryOptions := queryservice.Options{
+		Timeout:  cfg.QueryTimeout,
+		MaxRows:  cfg.QueryMaxRows,
+		MaxBytes: cfg.QueryMaxBytes,
+	}
+	queryHandler := queryhandler.New(
+		registry,
+		queryOptions,
 	)
 
-	indexHandler := indexhandler.New(indexService)
+	diagnosticsOptions := diagnosticsservice.Options{
+		Timeout: cfg.QueryTimeout,
+	}
+	diagnosticsHandler := diagnosticshandler.New(
+		registry,
+		diagnosticsOptions,
+	)
+
+	indexOptions := indexservice.Options{
+		Timeout: cfg.QueryTimeout,
+	}
+	indexHandler := indexhandler.New(
+		registry,
+		indexOptions,
+	)
 
 	mcpServer := mcp.NewServer(
 		&mcp.Implementation{
 			Name:    "pgo-mcp",
-			Version: "0.1.0",
+			Version: "0.2.0",
 		},
 		nil,
 	)
 	outputSchemas := toolOutputSchemas()
 
 	{
+		mcp.AddTool(
+			mcpServer,
+			&mcp.Tool{
+				Name:         "list_databases",
+				Description:  "List accessible PostgreSQL databases permitted by server configuration",
+				OutputSchema: outputSchemas["list_databases"],
+			},
+			databaseHandler.ListDatabases,
+		)
+
 		mcp.AddTool(
 			mcpServer,
 			&mcp.Tool{
@@ -176,7 +193,10 @@ func New(host, port string, pool *pgxpool.Pool, authToken string, cfg config.Con
 		func(r *http.Request) *mcp.Server {
 			return mcpServer
 		},
-		nil,
+		&mcp.StreamableHTTPOptions{
+			MaxRequestBodyBytes: maxRequestBodyBytes,
+			SessionTimeout:      sessionTimeout,
+		},
 	)
 
 	mux := http.NewServeMux()
@@ -192,7 +212,9 @@ func New(host, port string, pool *pgxpool.Pool, authToken string, cfg config.Con
 		http: &http.Server{
 			Addr:              host + ":" + port,
 			Handler:           mux,
-			ReadHeaderTimeout: 5 * 1e9,
+			ReadHeaderTimeout: 5 * time.Second,
+			IdleTimeout:       2 * time.Minute,
+			MaxHeaderBytes:    maxHeaderBytes,
 		},
 	}
 }

@@ -67,6 +67,9 @@ jobs:
           --health-retries 10
     env:
       DATABASE_URI: postgresql://pgo_mcp_reader:reader_ci_password@127.0.0.1:5432/pgo_mcp_test?sslmode=disable
+      DATABASE_DISCOVERY: true
+      DATABASE_ALLOWED: pgo_mcp_test_2
+      DATABASE_MAX_POOLS: 5
       MCP_HOST: 127.0.0.1
       MCP_PORT: 8002
       MCP_TEST_ENDPOINT: http://127.0.0.1:8002/mcp
@@ -115,6 +118,18 @@ jobs:
           docker exec -i -e PGPASSWORD="$PGPASSWORD" "$POSTGRES_CONTAINER" \
             psql -U postgres -d pgo_mcp_test -v ON_ERROR_STOP=1 \
             < tests/integration/fixture.sql
+          docker exec -e PGPASSWORD="$PGPASSWORD" "$POSTGRES_CONTAINER" \
+            psql -U postgres -d postgres -v ON_ERROR_STOP=1 \
+            -c "CREATE DATABASE pgo_mcp_test_2"
+          docker exec -i -e PGPASSWORD="$PGPASSWORD" "$POSTGRES_CONTAINER" \
+            psql -U postgres -d pgo_mcp_test_2 -v ON_ERROR_STOP=1 \
+            < tests/integration/fixture-secondary.sql
+          docker exec -e PGPASSWORD="$PGPASSWORD" "$POSTGRES_CONTAINER" \
+            psql -U postgres -d postgres -v ON_ERROR_STOP=1 \
+            -c "CREATE DATABASE pgo_mcp_denied"
+          docker exec -e PGPASSWORD="$PGPASSWORD" "$POSTGRES_CONTAINER" \
+            psql -U postgres -d postgres -v ON_ERROR_STOP=1 \
+            -c "REVOKE CONNECT ON DATABASE pgo_mcp_denied FROM PUBLIC, pgo_mcp_reader"
       - name: Start PGO MCP
         run: |
           go build -o /tmp/pgo-mcp ./src

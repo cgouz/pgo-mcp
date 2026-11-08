@@ -1,6 +1,7 @@
 package dto
 
 type GetObjectDetailsInput struct {
+	Database   string `json:"database,omitempty" jsonschema:"Target PostgreSQL database name"`
 	SchemaName string `json:"schema_name"`
 	ObjectName string `json:"object_name"`
 	ObjectType string `json:"object_type,omitempty"`

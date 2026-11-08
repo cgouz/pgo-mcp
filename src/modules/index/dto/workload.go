@@ -1,7 +1,8 @@
 package dto
 
 type AnalyzeWorkloadInput struct {
-	Limit int `json:"limit,omitempty"`
+	Database string `json:"database,omitempty" jsonschema:"Target PostgreSQL database name"`
+	Limit    int    `json:"limit,omitempty"`
 }
 
 type WorkloadQuery struct {

@@ -8,6 +8,7 @@ Application quyidagi cheklovlarni qo‘llaydi:
 
 - `/mcp` uchun majburiy Bearer authentication;
 - PostgreSQL Connection Pool orqali alohida login roli;
+- administrator allowlist’i va har bir baza uchun PostgreSQL `CONNECT` tekshiruvi;
 - Query operatsiyalari uchun read-only transaction;
 - Go context timeout va PostgreSQL statement timeout;
 - `execute_sql` uchun satr va JSON hajmi limitlari;
@@ -31,6 +32,7 @@ CREATE ROLE pgo_mcp_reader
     NOREPLICATION;
 
 GRANT CONNECT ON DATABASE procurement TO pgo_mcp_reader;
+GRANT CONNECT ON DATABASE analytics TO pgo_mcp_reader;
 GRANT USAGE ON SCHEMA public TO pgo_mcp_reader;
 GRANT SELECT ON ALL TABLES IN SCHEMA public TO pgo_mcp_reader;
 GRANT SELECT ON ALL SEQUENCES IN SCHEMA public TO pgo_mcp_reader;
@@ -119,9 +121,11 @@ Rasmiy image:
 Image tag’ni production’da aniq versiya yoki digest bilan pin qiling:
 
 ```bash
-docker pull ghcr.io/cgouz/pgo-mcp:0.1.0
+docker pull ghcr.io/cgouz/pgo-mcp:0.2.0
 ```
 
 ## MCP access control
 
-Hozirgi server bitta global Bearer token ishlatadi; per-user identity, per-tool authorization yoki OAuth scope modeli yo‘q. Token egasi PostgreSQL reader roli ko‘ra oladigan barcha to‘qqiz vositadan foydalanishi mumkin. Ko‘p foydalanuvchili muhitda identity-aware reverse proxy, alohida instance/token va audit log strategiyasini qo‘llang.
+Hozirgi server bitta global Bearer token ishlatadi; per-user identity, per-tool yoki per-database authorization yoxud OAuth scope modeli yo‘q. Token egasi PGO MCP konfiguratsiyasi ruxsat bergan barcha bazalarda o‘nta vositadan foydalanishi mumkin. Ko‘p foydalanuvchili muhitda identity-aware reverse proxy, alohida instance/token va audit log strategiyasini qo‘llang.
+
+`DATABASE_ALLOWED=*` faqat ishonchli muhit uchun explicit opt-in hisoblanadi. PostgreSQL `PUBLIC` roliga default `CONNECT` bergan bo‘lishi mumkin, shuning uchun wildcard kutilganidan ko‘proq bazani ko‘rsatishi ehtimoli bor. `pg_database`, `PUBLIC` privilege’lari va reader rol grantlarini muntazam audit qiling.

@@ -1,7 +1,7 @@
 
 services:
   pgo-mcp:
-    image: ghcr.io/cgouz/pgo-mcp:0.1.0
+    image: ghcr.io/cgouz/pgo-mcp:0.2.0
     container_name: pgo-mcp
 
     restart: unless-stopped

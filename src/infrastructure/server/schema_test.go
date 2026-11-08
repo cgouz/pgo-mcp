@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/jsonschema-go/jsonschema"
 
+	databasedto "github.com/cgouz/pgo-mcp/src/modules/database/dto"
 	diagnosticsdto "github.com/cgouz/pgo-mcp/src/modules/diagnostics/dto"
 	indexdto "github.com/cgouz/pgo-mcp/src/modules/index/dto"
 	objectdto "github.com/cgouz/pgo-mcp/src/modules/object/dto"
@@ -16,6 +17,7 @@ import (
 
 func TestToolInputSchemasArePortable(t *testing.T) {
 	schemas := map[string]*jsonschema.Schema{
+		"list_databases":           inputSchema[databasedto.ListDatabasesInput](t),
 		"list_schemas":             inputSchema[schemadto.ListSchemasInput](t),
 		"list_objects":             inputSchema[objectdto.ListObjectsInput](t),
 		"get_object_details":       inputSchema[objectdto.GetObjectDetailsInput](t),
@@ -51,8 +53,8 @@ func TestToolInputSchemasArePortable(t *testing.T) {
 func TestToolOutputSchemasArePortable(t *testing.T) {
 	schemas := toolOutputSchemas()
 
-	if len(schemas) != 9 {
-		t.Fatalf("got %d tool output schemas, want 9", len(schemas))
+	if len(schemas) != 10 {
+		t.Fatalf("got %d tool output schemas, want 10", len(schemas))
 	}
 
 	for name, schema := range schemas {

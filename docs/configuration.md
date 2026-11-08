@@ -7,6 +7,9 @@ PGO MCP konfiguratsiyani faqat environment variable’lardan o‘qiydi. `.env` f
 | O‘zgaruvchi | Majburiy | Default | Ruxsat etilgan qiymat |
 | --- | --- | --- | --- |
 | `DATABASE_URI` | Ha | Yo‘q | pgx qabul qiladigan PostgreSQL URI |
+| `DATABASE_DISCOVERY` | Yo‘q | `false` | `true` yoki `false` |
+| `DATABASE_ALLOWED` | Yo‘q | Bo‘sh | Bo‘sh, vergul bilan ajratilgan nomlar yoki aynan `*` |
+| `DATABASE_MAX_POOLS` | Yo‘q | `5` | `1`–`100` |
 | `MCP_AUTH_TOKEN` | Ha | Yo‘q | Kamida 32 belgi |
 | `MCP_HOST` | Yo‘q | `127.0.0.1` | IP manzil; hostname qabul qilinmaydi |
 | `MCP_PORT` | Yo‘q | `8001` | `1`–`65535` |
@@ -25,6 +28,26 @@ DATABASE_URI=postgresql://pgo_mcp_reader:CHANGE_ME@postgres:5432/procurement?ssl
 ```
 
 Password ichidagi `@`, `:`, `/`, `?`, `#`, `%` kabi URI uchun maxsus belgilar percent-encoding qilinishi kerak. Masalan, `p@ss:word` qiymati `p%40ss%3Aword` ko‘rinishida yoziladi. Secret’ni repository, image layer yoki log’ga kiritmang.
+
+URI’dagi baza default baza hisoblanadi. PostgreSQL bitta connection ichida bazani almashtirmaydi, shu sabab PGO MCP har bir tanlangan baza uchun ayni host, port, credential, TLS va runtime parametrlarini saqlagan alohida pool yaratadi. MCP input’i host, credential yoki URI’ni almashtira olmaydi.
+
+### `DATABASE_DISCOVERY` va `DATABASE_ALLOWED`
+
+`DATABASE_DISCOVERY=false` va bo‘sh `DATABASE_ALLOWED` mavjud single-database xatti-harakatini saqlaydi. Discovery o‘chiq bo‘lsa, nomlar ro‘yxati yoki `*` berish konfiguratsiya xatosidir.
+
+Uchta access rejimi mavjud:
+
+1. `DATABASE_ALLOWED=` — faqat `DATABASE_URI` dagi default baza. Bu xavfsiz default.
+2. `DATABASE_ALLOWED=analytics,education,reporting` — default baza va aniq ko‘rsatilgan bazalar. Bo‘sh element, masalan `analytics,,education`, rad etiladi; takrorlar olib tashlanadi va nom registri saqlanadi.
+3. `DATABASE_ALLOWED=*` — `datallowconn=true`, template bo‘lmagan va joriy rol `CONNECT` huquqiga ega barcha bazalar. `*` boshqa nom bilan aralashtirilmaydi.
+
+Ikkinchi va uchinchi rejim uchun `DATABASE_DISCOVERY=true` bo‘lishi shart. PostgreSQL ko‘pincha `CONNECT` huquqini `PUBLIC` roliga beradi; shu sabab wildcard rejimi administrator alohida nomlamagan bazalarni ham ochishi mumkin. Production’da `PUBLIC` huquqlarini audit qiling.
+
+### `DATABASE_MAX_POOLS`
+
+Bir vaqtda registry saqlaydigan pool’lar soni. Default pool ham limitga kiradi. Pool birinchi muvaffaqiyatli ishlatilgandan so‘ng shutdown’gacha saqlanadi; LRU eviction yo‘q. Limit to‘lsa, yangi baza uchun aniq xato qaytariladi.
+
+`DATABASE_MAX_POOLS=5` va `DB_MAX_CONNS=5` konfiguratsion yuqori chegara sifatida 25 ta pooled connection beradi. Bu barcha connection darhol ochilishini anglatmaydi.
 
 ### `MCP_AUTH_TOKEN`
 
@@ -78,6 +101,9 @@ Query operatsiyalari uchun Go context timeout. Default `10s`, diapazon `1s`–`6
 
 ```dotenv
 DATABASE_URI=postgresql://pgo_mcp_reader:CHANGE_ME@postgres:5432/procurement?sslmode=require
+DATABASE_DISCOVERY=true
+DATABASE_ALLOWED=analytics,education,reporting
+DATABASE_MAX_POOLS=5
 DB_MAX_CONNS=5
 DB_MIN_CONNS=0
 

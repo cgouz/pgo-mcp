@@ -18,7 +18,7 @@ Source kod usuli uchun qo‘shimcha ravishda Go `1.25.7` talab qilinadi. Workloa
 Bu usul repository’ni clone qilishni talab qilmaydi.
 
 ```bash
-docker pull ghcr.io/cgouz/pgo-mcp:0.1.0
+docker pull ghcr.io/cgouz/pgo-mcp:0.2.0
 export MCP_AUTH_TOKEN="$(openssl rand -hex 32)"
 ```
 
@@ -35,7 +35,7 @@ docker run --rm \
   -e MCP_HOST=0.0.0.0 \
   -e MCP_PORT=8001 \
   -e MCP_AUTH_TOKEN \
-  ghcr.io/cgouz/pgo-mcp:0.1.0
+  ghcr.io/cgouz/pgo-mcp:0.2.0
 ```
 
 `127.0.0.1` container ichida aynan o‘sha containerni bildiradi. U host’dagi yoki boshqa container’dagi PostgreSQL’ni bildirmaydi. Docker Desktop’da host uchun `host.docker.internal`, boshqa container uchun esa umumiy user-defined network’dagi container DNS nomi ishlatiladi.
@@ -47,7 +47,7 @@ Bo‘sh katalogda quyidagi `docker-compose.yml` faylini yarating:
 ```yaml
 services:
   pgo-mcp:
-    image: ghcr.io/cgouz/pgo-mcp:0.1.0
+    image: ghcr.io/cgouz/pgo-mcp:0.2.0
     restart: unless-stopped
     env_file:
       - .docker.env
@@ -73,6 +73,9 @@ Secret’larni commit qilinmaydigan `.docker.env` fayliga yozing:
 
 ```dotenv
 DATABASE_URI=postgresql://pgo_mcp_reader:CHANGE_ME@postgres:5432/procurement?sslmode=disable
+DATABASE_DISCOVERY=true
+DATABASE_ALLOWED=analytics,education,reporting
+DATABASE_MAX_POOLS=5
 DB_MAX_CONNS=5
 DB_MIN_CONNS=0
 MCP_AUTH_TOKEN=REPLACE_WITH_A_RANDOM_64_CHARACTER_HEX_TOKEN
@@ -110,7 +113,11 @@ set +a
 go run ./src
 ```
 
-Server `SIGINT` yoki `SIGTERM` olganda HTTP serverni 10 soniyagacha kutib, graceful shutdown bajaradi va Connection Pool’ni yopadi.
+Server `SIGINT` yoki `SIGTERM` olganda HTTP serverni 10 soniyagacha kutib, graceful shutdown bajaradi va barcha database pool’larini yopadi.
+
+## Single-database konfiguratsiyadan o‘tish
+
+Eski konfiguratsiya o‘zgarishsiz ishlaydi: yangi variable’lar berilmasa faqat `DATABASE_URI` dagi baza ochiladi. Qo‘shimcha bazalar uchun bir xil PostgreSQL login roliga har bir bazada `CONNECT` hamda kerakli schema va obyekt huquqlarini bering, keyin discovery va allowlist’ni yoqing. Alohida baza URI’lari kerak emas.
 
 ## Health endpoint
 
@@ -131,7 +138,7 @@ npx @modelcontextprotocol/inspector --cli \
   --strict
 ```
 
-Natijada to‘qqizta vosita ko‘rinishi kerak.
+Natijada o‘nta vosita ko‘rinishi kerak.
 
 ## Integration test
 
@@ -170,3 +177,11 @@ PostgreSQL startup konfiguratsiyasida `shared_preload_libraries='pg_stat_stateme
 ### `object not found or access denied`
 
 Obyekt nomi bilan birga `USAGE`, `SELECT` yoki sequence huquqlarini tekshiring. Server faqat ulangan rol ko‘ra oladigan obyektlarni qaytaradi.
+
+### `database not found or CONNECT privilege denied`
+
+Baza nomi case-sensitive ekanini, `DATABASE_ALLOWED` ro‘yxatida borligini va PostgreSQL roli `CONNECT` huquqiga ega ekanini tekshiring. Baza startup’dan keyin o‘chirilgan yoki privilege bekor qilingan bo‘lsa, mavjud pool keyingi operatsiyada xato qaytarishi mumkin.
+
+### `database pool limit reached`
+
+`DATABASE_MAX_POOLS` qiymatiga yetilgan. Dastlabki versiyada ishlatilgan pool’lar avtomatik chiqarilmaydi. Kerakli bazalar soniga mos limit bering va `DB_MAX_CONNS × DATABASE_MAX_POOLS` umumiy connection chegarasini hisobga oling.

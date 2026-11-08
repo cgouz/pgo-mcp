@@ -2,7 +2,9 @@ package dto
 
 import "time"
 
-type AnalyzeDBHealthInput struct{}
+type AnalyzeDBHealthInput struct {
+	Database string `json:"database,omitempty" jsonschema:"Target PostgreSQL database name"`
+}
 
 type Connections struct {
 	DatabaseActive int     `json:"database_active"`

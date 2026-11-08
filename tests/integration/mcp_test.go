@@ -8,10 +8,15 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/cgouz/pgo-mcp/src/infrastructure/database"
+	queryservice "github.com/cgouz/pgo-mcp/src/modules/query/service"
 )
 
 const defaultEndpoint = "http://127.0.0.1:8002/mcp"
@@ -112,7 +117,11 @@ func callTool(
 		t.Fatalf("%s: %v", name, err)
 	}
 	if result.IsError {
-		t.Fatalf("%s returned tool error: %+v", name, result.Content)
+		t.Fatalf(
+			"%s returned tool error: %s",
+			name,
+			toolErrorContent(result.Content),
+		)
 	}
 
 	data, err := json.Marshal(result.StructuredContent)
@@ -129,6 +138,27 @@ func callTool(
 	}
 
 	return output
+}
+
+func toolErrorContent(content []mcp.Content) string {
+	texts := make([]string, 0, len(content))
+
+	for _, item := range content {
+		if value, ok := item.(*mcp.TextContent); ok {
+			texts = append(texts, value.Text)
+		}
+	}
+
+	if len(texts) > 0 {
+		return strings.Join(texts, "\n")
+	}
+
+	data, err := json.MarshalIndent(content, "", "  ")
+	if err != nil {
+		return fmt.Sprintf("unreadable MCP content: %v", err)
+	}
+
+	return string(data)
 }
 
 func requireToolError(
@@ -225,6 +255,7 @@ func TestToolDiscovery(t *testing.T) {
 	}
 
 	expected := []string{
+		"list_databases",
 		"list_schemas",
 		"list_objects",
 		"get_object_details",
@@ -247,6 +278,304 @@ func TestToolDiscovery(t *testing.T) {
 			t.Errorf("missing MCP tool: %s", name)
 		}
 	}
+}
+
+func TestDatabaseDiscoveryAndSelection(t *testing.T) {
+	ctx, session := testSession(t)
+
+	listed := callTool(
+		t, ctx, session, "list_databases",
+		map[string]any{},
+	)
+	if listed["default"] != "pgo_mcp_test" {
+		t.Fatalf("unexpected default database: %v", listed["default"])
+	}
+
+	databases, ok := listed["databases"].([]any)
+	if !ok || len(databases) != 2 {
+		t.Fatalf("unexpected databases: %v", listed["databases"])
+	}
+
+	for _, test := range []struct {
+		name     string
+		database string
+		expected string
+	}{
+		{name: "default", expected: "pgo_mcp_test"},
+		{name: "explicit", database: "pgo_mcp_test_2", expected: "pgo_mcp_test_2"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			result := callTool(
+				t, ctx, session, "execute_sql",
+				map[string]any{
+					"database": test.database,
+					"sql":      "SELECT current_database()",
+				},
+			)
+
+			rows, ok := result["rows"].([]any)
+			if !ok || len(rows) != 1 {
+				t.Fatalf("unexpected rows: %v", result["rows"])
+			}
+			first, ok := rows[0].([]any)
+			if !ok || len(first) != 1 || first[0] != test.expected {
+				t.Fatalf("unexpected database result: %v", rows)
+			}
+		})
+	}
+
+	for _, name := range []string{
+		"pgo_mcp_denied",
+		"missing_database",
+		"postgresql://other:secret@evil.example/database",
+	} {
+		requireToolError(
+			t, ctx, session, "execute_sql",
+			map[string]any{
+				"database": name,
+				"sql":      "SELECT current_database()",
+			},
+		)
+	}
+
+	indexes := callTool(
+		t, ctx, session, "analyze_query_indexes",
+		map[string]any{
+			"database": "pgo_mcp_test_2",
+			"sql":      "SELECT * FROM public.procurements WHERE status = 'secondary'",
+		},
+	)
+	requireNonEmptyArray(t, indexes, "tables")
+
+	requireToolError(
+		t, ctx, session, "execute_sql",
+		map[string]any{
+			"database": "pgo_mcp_test_2",
+			"sql":      "DELETE FROM public.procurements",
+		},
+	)
+}
+
+func TestDatabaseRegistry(t *testing.T) {
+	ctx := context.Background()
+	uri := os.Getenv("DATABASE_URI")
+
+	t.Run("pool reuse and limit", func(t *testing.T) {
+		registry, err := database.NewRegistry(
+			ctx,
+			uri,
+			database.RegistryOptions{
+				Discovery: true,
+				AllowAll:  true,
+				MaxPools:  2,
+				MaxConns:  2,
+			},
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(registry.Close)
+
+		first, err := registry.Pool(ctx, "pgo_mcp_test_2")
+		if err != nil {
+			t.Fatal(err)
+		}
+		second, err := registry.Pool(ctx, "pgo_mcp_test_2")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if first != second {
+			t.Fatal("database pool was not reused")
+		}
+
+		var wg sync.WaitGroup
+		errs := make(chan error, 20)
+		for i := 0; i < 20; i++ {
+			wg.Add(1)
+			go func(useDefault bool) {
+				defer wg.Done()
+
+				name := "pgo_mcp_test_2"
+				expected := name
+				if useDefault {
+					name = ""
+					expected = "pgo_mcp_test"
+				}
+
+				pool, err := registry.Pool(ctx, name)
+				if err != nil {
+					errs <- err
+					return
+				}
+
+				var actual string
+				if err := pool.QueryRow(ctx, "SELECT current_database()").Scan(&actual); err != nil {
+					errs <- err
+					return
+				}
+				if actual != expected {
+					errs <- fmt.Errorf("expected %s, got %s", expected, actual)
+				}
+			}(i%2 == 0)
+		}
+		wg.Wait()
+		close(errs)
+		for err := range errs {
+			t.Error(err)
+		}
+
+		if _, err := registry.Pool(ctx, "postgres"); err == nil {
+			t.Fatal("expected database pool limit error")
+		}
+
+		registry.Close()
+		if err := first.Ping(ctx); err == nil {
+			t.Fatal("database pool remained open after registry close")
+		}
+	})
+
+	t.Run("concurrent pool creation", func(t *testing.T) {
+		registry, err := database.NewRegistry(
+			ctx,
+			uri,
+			database.RegistryOptions{
+				Discovery: true,
+				AllowAll:  true,
+				MaxPools:  2,
+				MaxConns:  2,
+			},
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer registry.Close()
+
+		var wg sync.WaitGroup
+		pools := make(chan *pgxpool.Pool, 10)
+		errs := make(chan error, 10)
+
+		for i := 0; i < 10; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				pool, err := registry.Pool(ctx, "pgo_mcp_test_2")
+				if err != nil {
+					errs <- err
+					return
+				}
+				pools <- pool
+			}()
+		}
+
+		wg.Wait()
+		close(pools)
+		close(errs)
+
+		for err := range errs {
+			t.Error(err)
+		}
+
+		var expected *pgxpool.Pool
+		for pool := range pools {
+			if expected == nil {
+				expected = pool
+			}
+			if pool != expected {
+				t.Fatal("concurrent request created a duplicate pool")
+			}
+		}
+	})
+
+	t.Run("default only", func(t *testing.T) {
+		registry, err := database.NewRegistry(
+			ctx,
+			uri,
+			database.RegistryOptions{
+				MaxPools: 1,
+				MaxConns: 2,
+			},
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer registry.Close()
+
+		items, err := registry.Databases(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(items) != 1 || items[0].Name != "pgo_mcp_test" {
+			t.Fatalf("unexpected default-only databases: %v", items)
+		}
+		if _, err := registry.Pool(ctx, "pgo_mcp_test_2"); err == nil {
+			t.Fatal("default-only registry accepted another database")
+		}
+	})
+
+	t.Run("wildcard discovery", func(t *testing.T) {
+		registry, err := database.NewRegistry(
+			ctx,
+			uri,
+			database.RegistryOptions{
+				Discovery: true,
+				AllowAll:  true,
+				MaxPools:  5,
+				MaxConns:  2,
+			},
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer registry.Close()
+
+		items, err := registry.Databases(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		found := make(map[string]bool)
+		for _, item := range items {
+			found[item.Name] = true
+		}
+		if !found["pgo_mcp_test"] || !found["pgo_mcp_test_2"] {
+			t.Fatalf("expected test databases, got %v", found)
+		}
+		if found["pgo_mcp_denied"] || found["template0"] || found["template1"] {
+			t.Fatalf("ineligible database discovered: %v", found)
+		}
+	})
+
+	t.Run("case sensitive allowlist", func(t *testing.T) {
+		_, err := database.NewRegistry(
+			ctx,
+			uri,
+			database.RegistryOptions{
+				Discovery: true,
+				Allowed:   []string{"PGO_MCP_TEST_2"},
+				MaxPools:  2,
+				MaxConns:  2,
+			},
+		)
+		if err == nil {
+			t.Fatal("expected case-sensitive allowlist error")
+		}
+	})
+
+	t.Run("missing CONNECT privilege", func(t *testing.T) {
+		_, err := database.NewRegistry(
+			ctx,
+			uri,
+			database.RegistryOptions{
+				Discovery: true,
+				Allowed:   []string{"pgo_mcp_denied"},
+				MaxPools:  2,
+				MaxConns:  2,
+			},
+		)
+		if err == nil {
+			t.Fatal("expected CONNECT privilege error")
+		}
+	})
 }
 
 func TestSchemaAndObjects(t *testing.T) {
@@ -313,7 +642,8 @@ func TestRowLimit(t *testing.T) {
 
 	if result["row_count"] != float64(5) {
 		t.Fatalf(
-			"expected 5 rows, got %v",
+			"expected QUERY_MAX_ROWS=5, running MCP server returned %v rows; "+
+				"restart the server with QUERY_MAX_ROWS=5",
 			result["row_count"],
 		)
 	}
@@ -348,6 +678,111 @@ func TestReadOnly(t *testing.T) {
 	first, ok := rows[0].([]any)
 	if !ok || len(first) != 1 || first[0] != nil {
 		t.Fatalf("table unexpectedly exists: %v", rows)
+	}
+
+	requireToolError(
+		t, ctx, session, "execute_sql",
+		map[string]any{
+			"sql": "SELECT 1; CREATE TABLE public.multi_statement_write (id int)",
+		},
+	)
+
+	requireToolError(
+		t, ctx, session, "execute_sql",
+		map[string]any{
+			"sql": "SELECT nextval('public.procurements_id_seq')",
+		},
+	)
+
+	requireToolError(
+		t, ctx, session, "explain_query",
+		map[string]any{
+			"sql":     "INSERT INTO public.procurements (status, amount) VALUES ('unsafe', 1)",
+			"analyze": true,
+		},
+	)
+
+	result = callTool(
+		t, ctx, session, "execute_sql",
+		map[string]any{
+			"sql": "SELECT count(*) FROM public.procurements WHERE status = 'unsafe'",
+		},
+	)
+
+	rows, ok = result["rows"].([]any)
+	if !ok || len(rows) != 1 {
+		t.Fatalf("unexpected rows: %v", result["rows"])
+	}
+
+	first, ok = rows[0].([]any)
+	if !ok || len(first) != 1 || first[0] != "0" {
+		t.Fatalf("write unexpectedly succeeded: %v", rows)
+	}
+}
+
+func TestQueryLimits(t *testing.T) {
+	ctx, session := testSession(t)
+
+	result := callTool(
+		t, ctx, session, "execute_sql",
+		map[string]any{
+			"sql": "SELECT repeat('x', 1048576)",
+		},
+	)
+
+	if result["row_count"] != float64(0) || result["truncated"] != true {
+		t.Fatalf("expected byte-limited result, got %v", result)
+	}
+
+	requireToolError(
+		t, ctx, session, "execute_sql",
+		map[string]any{
+			"sql": "SELECT 1 /*" + strings.Repeat("x", 64*1024) + "*/",
+		},
+	)
+}
+
+func TestQueryCancellationAndCleanup(t *testing.T) {
+	ctx := context.Background()
+	pool, err := pgxpool.New(ctx, os.Getenv("DATABASE_URI"))
+	if err != nil {
+		t.Fatalf("create pool: %v", err)
+	}
+	t.Cleanup(pool.Close)
+	if err := pool.Ping(ctx); err != nil {
+		t.Fatalf("connect to test database: %v", err)
+	}
+
+	service := queryservice.New(
+		pool,
+		queryservice.Options{
+			Timeout:  100 * time.Millisecond,
+			MaxRows:  5,
+			MaxBytes: 1024,
+		},
+	)
+
+	started := time.Now()
+	if _, err := service.ExecuteSQL(ctx, "SELECT pg_sleep(2)"); err == nil {
+		t.Fatal("expected query timeout")
+	}
+	if time.Since(started) >= time.Second {
+		t.Fatal("query cancellation exceeded expected deadline")
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for pool.Stat().AcquiredConns() != 0 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if pool.Stat().AcquiredConns() != 0 {
+		t.Fatalf(
+			"expected no acquired connections, got %d",
+			pool.Stat().AcquiredConns(),
+		)
+	}
+
+	if _, err := service.ExecuteSQL(ctx, "SELECT 1"); err != nil {
+		t.Fatalf("pool unusable after cancellation: %v", err)
 	}
 }
 

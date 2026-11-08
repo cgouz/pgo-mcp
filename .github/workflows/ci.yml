@@ -1,0 +1,158 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  go:
+    name: Go checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache: true
+          cache-dependency-path: go.sum
+      - name: Verify modules
+        run: go mod verify
+      - name: Check formatting
+        shell: bash
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [[ -n "$unformatted" ]]; then
+            printf 'Files require gofmt:\n%s\n' "$unformatted"
+            exit 1
+          fi
+      - name: Vet
+        run: go vet ./...
+      - name: Test packages
+        run: go test ./src/... -count=1
+      - name: Build
+        run: go build -o /tmp/pgo-mcp ./src
+
+  integration:
+    name: Integration tests
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: pgo_mcp_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres_ci_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d pgo_mcp_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URI: postgresql://pgo_mcp_reader:reader_ci_password@127.0.0.1:5432/pgo_mcp_test?sslmode=disable
+      MCP_HOST: 127.0.0.1
+      MCP_PORT: 8002
+      MCP_TEST_ENDPOINT: http://127.0.0.1:8002/mcp
+      DB_MAX_CONNS: 5
+      DB_MIN_CONNS: 0
+      QUERY_TIMEOUT: 10s
+      QUERY_MAX_ROWS: 5
+      QUERY_MAX_BYTES: 1048576
+      PGPASSWORD: postgres_ci_password
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache: true
+          cache-dependency-path: go.sum
+      - name: Generate test authentication token
+        run: |
+          token="$(openssl rand -hex 32)"
+          echo "::add-mask::$token"
+          echo "MCP_AUTH_TOKEN=$token" >> "$GITHUB_ENV"
+      - name: Enable pg_stat_statements
+        env:
+          POSTGRES_CONTAINER: ${{ job.services.postgres.id }}
+        run: |
+          docker exec -e PGPASSWORD="$PGPASSWORD" "$POSTGRES_CONTAINER" \
+            psql -U postgres -d pgo_mcp_test \
+            -c "ALTER SYSTEM SET shared_preload_libraries = 'pg_stat_statements'"
+          docker restart "$POSTGRES_CONTAINER"
+          for attempt in {1..30}; do
+            if docker exec "$POSTGRES_CONTAINER" \
+              pg_isready -U postgres -d pgo_mcp_test; then
+              exit 0
+            fi
+            sleep 1
+          done
+          exit 1
+      - name: Initialize database
+        env:
+          POSTGRES_CONTAINER: ${{ job.services.postgres.id }}
+        run: |
+          docker exec -i -e PGPASSWORD="$PGPASSWORD" "$POSTGRES_CONTAINER" \
+            psql -U postgres -d pgo_mcp_test -v ON_ERROR_STOP=1 \
+            < tests/integration/fixture.sql
+      - name: Start PGO MCP
+        run: |
+          go build -o /tmp/pgo-mcp ./src
+          /tmp/pgo-mcp > /tmp/pgo-mcp.log 2>&1 &
+          echo $! > /tmp/pgo-mcp.pid
+          for attempt in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:8002/health > /dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat /tmp/pgo-mcp.log
+          exit 1
+      - name: Test
+        run: go test ./... -count=1
+      - name: Stop PGO MCP
+        if: always()
+        run: |
+          if [[ -f /tmp/pgo-mcp.pid ]]; then
+            kill -TERM "$(cat /tmp/pgo-mcp.pid)" 2>/dev/null || true
+          fi
+          tail -100 /tmp/pgo-mcp.log 2>/dev/null || true
+
+  docker:
+    name: Docker build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Build Docker image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
+        with:
+          context: .
+          platforms: linux/amd64
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

@@ -3,6 +3,7 @@
 .dockerignore
 .env
 .env.*
+.docker.env
 **/.env
 **/.env.*
 resources/env/*

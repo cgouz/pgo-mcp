@@ -1,4 +1,3 @@
-
 package integration
 
 import (
@@ -360,7 +359,7 @@ func TestExplainAndIndexAnalysis(t *testing.T) {
 	explain := callTool(
 		t, ctx, session, "explain_query",
 		map[string]any{
-			"sql": sql,
+			"sql":     sql,
 			"analyze": false,
 		},
 	)
